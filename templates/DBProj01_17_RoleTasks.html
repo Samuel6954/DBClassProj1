@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>作業可用程式維護 | DBProj01_17_RoleTasks</title>
+  <link rel="stylesheet" href="assets/tech.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="logo" aria-hidden="true"></div>
+        <div class="title">ERP 稽核輔助｜作業可用程式維護（系統權限）</div>
+        <div class="breadcrumbs">首頁 / 權限設定 / 作業可用程式維護</div>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Role Info -->
+      <section class="panel subtle-grid">
+        <div class="panel-header">
+          <div class="panel-title">系統權限</div>
+          <div class="panel-actions">
+            <a class="btn" href="DBProj01_02_Role.html">返回清單</a>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <div class="col-12">
+              <label>權限</label>
+              <div id="RoleLabel" class="badge"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="spacer"></div>
+
+      <!-- Current tasks of role -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">目前權限擁有的作業目錄</div>
+          <div class="panel-actions hint" id="hintCurrent">顯示 0 筆</div>
+        </div>
+        <div class="panel-body">
+          <div class="table-wrap">
+            <table id="tblCurrent">
+              <thead>
+                <tr>
+                  <th>作業代碼</th>
+                  <th>作業名稱</th>
+                  <th>分類</th>
+                  <th>說明</th>
+                  <th>動作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <div class="spacer"></div>
+
+      <!-- Add multiple tasks to role -->
+      <section class="panel subtle-grid">
+        <div class="panel-header">
+          <div class="panel-title">新增作業到此權限（可多筆）</div>
+          <div class="panel-actions">
+            <button id="btnAddSelected" class="btn primary" type="button">新增選取作業</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <div class="col-12">
+              <div class="table-wrap">
+                <table id="tblAll">
+                  <thead>
+                    <tr>
+                      <th style="width:36px"><input id="chkAll" type="checkbox" /></th>
+                      <th>作業代碼</th>
+                      <th>作業名稱</th>
+                      <th>分類</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">提示：勾選多筆作業後，點選「新增選取作業」即可加入系統權限。</footer>
+  </div>
+
+  <script>
+  // Demo data
+  const ROLES = [
+    { id: 'HR-ADMIN', name: '人資管理員' },
+    { id: 'IT-DEV', name: '系統開發者' },
+    { id: 'IT-OPS', name: '系統維運' },
+    { id: 'FIN-USER', name: '財務一般使用者' },
+  ];
+
+  const TASKS = [
+    { id: 'TASK-RECRUIT', name: '人員招募作業', cat: 'HR', desc: '招募申請、面談與核准' },
+    { id: 'TASK-ONBOARD', name: '新人報到作業', cat: 'HR', desc: '新人報到與帳號建置' },
+    { id: 'TASK-LEAVE', name: '請假作業', cat: 'HR', desc: '假別設定與申請流程' },
+    { id: 'TASK-IT-OPS', name: '維運作業', cat: 'IT', desc: '問題單與部署作業' },
+  ];
+
+  // role -> assigned task ids
+  const ROLE_TASKS = {
+    'HR-ADMIN': ['TASK-RECRUIT', 'TASK-ONBOARD'],
+    'IT-DEV': ['TASK-IT-OPS'],
+  };
+
+  // Helpers
+  function qs(sel, root=document){ return root.querySelector(sel); }
+  function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
+  function getQuery(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
+  function taskById(id){ return TASKS.find(t=>t.id===id); }
+
+  // Elements
+  const roleLabel = qs('#RoleLabel');
+  const tblCurBody = qs('#tblCurrent tbody');
+  const hintCurrent = qs('#hintCurrent');
+
+  const tblAllBody = qs('#tblAll tbody');
+  const chkAll = qs('#chkAll');
+  const btnAddSelected = qs('#btnAddSelected');
+
+  let currentRoleId = '';
+
+  function loadRole(roleId){
+    const role = ROLES.find(r=>r.id===roleId) || ROLES[0];
+    currentRoleId = role.id;
+    if (roleLabel) roleLabel.textContent = `${role.id}｜${role.name}`;
+  }
+
+  function renderCurrent(){
+    const ids = ROLE_TASKS[currentRoleId] || [];
+    tblCurBody.innerHTML = '';
+    for (const id of ids){
+      const t = taskById(id);
+      if (!t) continue;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${t.id}</td>
+        <td>${t.name}</td>
+        <td>${t.cat}</td>
+        <td>${t.desc || ''}</td>
+        <td><button class="btn danger" data-remove="${t.id}" type="button">移除</button></td>
+      `;
+      tblCurBody.appendChild(tr);
+    }
+    hintCurrent.textContent = `顯示 ${ids.length} 筆`;
+  }
+
+  function renderAll(filter=''){
+    const kw = filter.trim().toLowerCase();
+    const existed = new Set(ROLE_TASKS[currentRoleId] || []);
+    tblAllBody.innerHTML = '';
+    for (const t of TASKS){
+      if (kw && !(`${t.id} ${t.name} ${t.cat} ${t.desc}`.toLowerCase().includes(kw))) continue;
+      const tr = document.createElement('tr');
+      const disabled = existed.has(t.id) ? 'disabled' : '';
+      const title = existed.has(t.id) ? '（已加入）' : '';
+      tr.innerHTML = `
+        <td><input type="checkbox" data-id="${t.id}" ${disabled}></td>
+        <td>${t.id}</td>
+        <td>${t.name} ${title}</td>
+        <td>${t.cat}</td>
+      `;
+      tblAllBody.appendChild(tr);
+    }
+  }
+
+  function addSelected(){
+    const checks = qsa('input[type="checkbox"][data-id]:checked', tblAllBody);
+    if (!checks.length) return;
+    const list = ROLE_TASKS[currentRoleId] || (ROLE_TASKS[currentRoleId]=[]);
+    const exists = new Set(list);
+    for (const ck of checks){
+      const id = ck.getAttribute('data-id');
+      if (!exists.has(id)){
+        list.push(id);
+        exists.add(id);
+      }
+    }
+    // 清空勾選並重繪
+    chkAll.checked = false;
+    renderCurrent();
+    renderAll('');
+  }
+
+  // Events
+  chkAll.addEventListener('change', () => {
+    const enabled = qsa('input[type="checkbox"][data-id]:not([disabled])', tblAllBody);
+    for (const c of enabled){ c.checked = chkAll.checked; }
+  });
+  btnAddSelected.addEventListener('click', addSelected);
+  tblCurBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-remove]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-remove');
+    const arr = ROLE_TASKS[currentRoleId] || [];
+    const idx = arr.indexOf(id);
+    if (idx >= 0) arr.splice(idx, 1);
+    renderCurrent();
+    renderAll('');
+  });
+
+  // Init
+  const qRoleId = getQuery('roleId') || 'HR-ADMIN';
+  loadRole(qRoleId);
+  renderCurrent();
+  renderAll('');
+  </script>
+</body>
+<!-- DBProj01_17_RoleTasks -->
+</html>

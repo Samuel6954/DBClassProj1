@@ -1,0 +1,131 @@
+**專案說明**
+需求分析：
+［作業目標］滿足稽核員快速檢視相關職務的系統作業功能
+作業流程：
+［新進人員報到］
+員工使用ERP系統，總管理處在員工到職時會建立員工基本資料，並設定員工的系統權限，每個系統權限都有對應的作業目錄，每個作業目錄有該作業需要用到的相關程式。（例如：員工張曉華是該公司的人資，他登入ERP系統後，可以看到職務為”人資” 的相關作業目錄，有『人員招募作業』、『人員報到作業』、『員工離職作業』。點擊『人員招募作業』會出現一系列與招募相關的程式，有『各項職務職缺管理』、『招募活動管理作業』、『招募成效統計』….等程式）
+
+※員工有時候常抱怨，點選一支程式很麻煩，要選到作業目錄才可以打開程式，希望可以有比較快的方式開起程式。
+
+**功能清單**
+單位代碼管理（DBProj01_01_Unit.html）
+系統權限管理（DBProj01_02_Role.html）
+員工資料管理（DBProj01_03_Employee.html）
+作業目錄管理（DBProj01_04_Task.html）
+程式代碼管理（DBProj01_05_Program.html）
+單位代碼維護（DBProj01_11_Unit.html）
+系統權限維護（DBProj01_12_Role.html）
+員工資料維護（DBProj01_13_Employee.html）
+作業目錄維護（DBProj01_14_Task.html）
+程式代碼維護（DBProj01_15_Program.html）
+作業可用程式維護（DBProj01_16_TaskProgs.html）
+權限可用作業維護（DBProj01_17_RoleTasks.html）
+員工常用程式維護（DBProj01_18_EmployeeProg.html）
+稽核查詢統計（DBProj01_21_ListEmployeeByUnit.html）
+
+這些檔案目前有樣板存放在ui資料夾
+
+**系統規格**
+單位(Unit):單位代碼id(UnitId)、單位名稱name(UnitName) 、單位說明書introduce(WorkIntroduce)、主管工號manager(ManagerUser)，
+員工(Employee):每位公司員工都有工號EmployeeId、姓名EmployeeName、單位代碼UnitId、職務名稱JobName、系統權限RoleId
+系統權限(Role):每個權限都有權限代碼RoleId、權限名稱RoleName、是否顯示visible(VisibleMark)
+作業目錄(Task):每個作業目錄有作業目錄編號TaskId、作業目錄TaskName
+系統權限作業目錄(RoleTasks):描述系統權限有哪些作業目錄
+程式代碼(program):程式代碼ProgId、程式名稱ProgName
+作業目錄程式(TaskProgs):描述作業目錄有哪些程式清單
+員工常用程式清單(EmployeeProgs):設定員工有哪些常用程式
+
+
+**專案總覽**
+
+- 技術棧：Flask + Blueprint 分層、Jinja2 模板、PostgreSQL（psycopg2 連線池）、dotenv 管理環境變數。
+- 所有前端程式共用 API/login（api）、資料庫存取層sql.py（sql）。
+ 
+- 首頁： 在 / 回傳 。
+    
+    app.py    
+    templates/DBProj01_16_TaskProgs.html
+
+**啟動方式**
+
+- 建環境與安裝：conda create -n db-2025 python=3.10 → conda activate db-2025 →
+    
+    pip install -r requirements.txt
+    
+- 設定資料庫：將 .env.example 複製成 .env 並填入 DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME
+- 啟動：，瀏覽 http://127.0.0.1:5000/
+    
+    python app.py
+
+**目錄結構**
+
+- 根目錄
+    - app.py：Flask 入口，註冊各 Blueprint，定義首頁路由 / → render_template('DBProj01_16_TaskProgs.html')
+    - requirements.txt：套件清單
+    - README.md：安裝與使用說明
+    - ERP.sql：資料表/範例資料
+    - .env.example：資料庫連線參數範本（建立 .env 使用）
+    - link.py：以環境變數建立單一 DB 連線（import 時就連線，建議改由連線池統一管理）
+- 模板與靜態資源
+    - templates/：共用與入口頁面模板(將ui資料夾下的所有程式建立於此)  
+        index.html        
+        base.html        
+        login.html        
+        register.html
+        
+    - static/：靜態資源（, img/*）
+        
+        css/template.css
+        
+- 共用 API 與 DB
+    - api/api.py：，處理登入、註冊、登出與使用者載入（Flask-Login）
+        
+        Blueprint('api', ...)
+        
+    - api/sql.py：載入 .env，建 psycopg2.pool.SimpleConnectionPool 連線池；封裝 execute/execute_input/fetchone/fetchall；資料表存取類別（如 Employee）
+
+
+**執行流程**
+
+- app.py 建立 Flask 應用並註冊：
+    - api 掛載在 /
+
+- 首頁：/ 回傳
+    
+    templates/DBProj01_16_TaskProgs.html
+    
+    
+- 資料庫：各 view 呼叫  的 DB 方法執行 SQL
+    
+    api/sql.py
+
+
+**環境設定**
+
+- .env 放在專案根目錄（ 會從 ../.env 讀取）
+    
+    api/sql.py
+    
+- 主要變數：
+    - DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+- 注意： 在 import 時就建立連線；若 .env 未就緒或 DB 無法連線會在啟動即失敗。建議統一改用  的連線池。
+    
+    link.py
+    
+    api/sql.py
+
+**route設定**
+DBProj01_01_Unit.html => Unit
+DBProj01_02_Role.html => Role
+DBProj01_03_Employee.html => Employee
+DBProj01_04_Task.html => Task
+DBProj01_05_Program.html => Program
+DBProj01_21_ListEmployeeByUnit.html => ListEmployee
+DBProj01_11_Unit.html => ModifyUnit?UnitId=XXX
+DBProj01_12_Role.html => ModifyRole?RoleId=XXX
+DBProj01_13_Employee.html => ModifyEmployee?EmployeeId=XXX
+DBProj01_14_Task.html => ModifyTask?TaskId=XXX
+DBProj01_15_Program.html => ModifyProgram?ProgId=XXX
+DBProj01_16_TaskProgs.html => TaskProgs?TaskId=XXX
+DBProj01_17_RoleTasks.html => RoleTasks?RoleId=XXX
+DBProj01_18_EmployeeProg.html => EmployeeProg?EmployeeId=XXX
