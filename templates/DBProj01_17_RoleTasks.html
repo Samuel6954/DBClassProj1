@@ -22,7 +22,7 @@
         <div class="panel-header">
           <div class="panel-title">系統權限</div>
           <div class="panel-actions">
-            <a class="btn" href="DBProj01_02_Role.html">返回清單</a>
+            <a class="btn" href="/Role" id="btnBack">返回清單</a>
           </div>
         </div>
         <div class="panel-body">
@@ -97,104 +97,72 @@
   </div>
 
   <script>
-  // Demo data
-  const ROLES = [
-    { id: 'HR-ADMIN', name: '人資管理員' },
-    { id: 'IT-DEV', name: '系統開發者' },
-    { id: 'IT-OPS', name: '系統維運' },
-    { id: 'FIN-USER', name: '財務一般使用者' },
-  ];
-
-  const TASKS = [
-    { id: 'TASK-RECRUIT', name: '人員招募作業', cat: 'HR', desc: '招募申請、面談與核准' },
-    { id: 'TASK-ONBOARD', name: '新人報到作業', cat: 'HR', desc: '新人報到與帳號建置' },
-    { id: 'TASK-LEAVE', name: '請假作業', cat: 'HR', desc: '假別設定與申請流程' },
-    { id: 'TASK-IT-OPS', name: '維運作業', cat: 'IT', desc: '問題單與部署作業' },
-  ];
-
-  // role -> assigned task ids
-  const ROLE_TASKS = {
-    'HR-ADMIN': ['TASK-RECRUIT', 'TASK-ONBOARD'],
-    'IT-DEV': ['TASK-IT-OPS'],
-  };
-
   // Helpers
   function qs(sel, root=document){ return root.querySelector(sel); }
   function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
   function getQuery(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
-  function taskById(id){ return TASKS.find(t=>t.id===id); }
+  async function fetchJSON(url, opt){ const r = await fetch(url, opt); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 
   // Elements
   const roleLabel = qs('#RoleLabel');
   const tblCurBody = qs('#tblCurrent tbody');
   const hintCurrent = qs('#hintCurrent');
-
   const tblAllBody = qs('#tblAll tbody');
   const chkAll = qs('#chkAll');
   const btnAddSelected = qs('#btnAddSelected');
+  const btnBack = qs('#btnBack');
 
   let currentRoleId = '';
+  let ALL_TASKS = [];
+  let ASSIGNED = new Set();
 
-  function loadRole(roleId){
-    const role = ROLES.find(r=>r.id===roleId) || ROLES[0];
-    currentRoleId = role.id;
-    if (roleLabel) roleLabel.textContent = `${role.id}｜${role.name}`;
-  }
-
-  function renderCurrent(){
-    const ids = ROLE_TASKS[currentRoleId] || [];
+  function renderCurrentRows(items){
     tblCurBody.innerHTML = '';
-    for (const id of ids){
-      const t = taskById(id);
-      if (!t) continue;
+    for (const t of (items||[])){
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${t.id}</td>
-        <td>${t.name}</td>
-        <td>${t.cat}</td>
-        <td>${t.desc || ''}</td>
-        <td><button class="btn danger" data-remove="${t.id}" type="button">移除</button></td>
+        <td>${t.TaskId}</td>
+        <td>${t.TaskName}</td>
+        <td></td>
+        <td></td>
+        <td><button class="btn danger" data-remove="${t.TaskId}" type="button">移除</button></td>
       `;
       tblCurBody.appendChild(tr);
     }
-    hintCurrent.textContent = `顯示 ${ids.length} 筆`;
+    hintCurrent.textContent = `顯示 ${items.length} 筆`;
   }
 
   function renderAll(filter=''){
-    const kw = filter.trim().toLowerCase();
-    const existed = new Set(ROLE_TASKS[currentRoleId] || []);
+    const kw = (filter||'').trim().toLowerCase();
     tblAllBody.innerHTML = '';
-    for (const t of TASKS){
-      if (kw && !(`${t.id} ${t.name} ${t.cat} ${t.desc}`.toLowerCase().includes(kw))) continue;
+    for (const t of ALL_TASKS){
+      if (kw && !(`${t.id} ${t.name}`.toLowerCase().includes(kw))) continue;
+      const disabled = ASSIGNED.has(t.id) ? 'disabled' : '';
+      const title = ASSIGNED.has(t.id) ? '（已加入）' : '';
       const tr = document.createElement('tr');
-      const disabled = existed.has(t.id) ? 'disabled' : '';
-      const title = existed.has(t.id) ? '（已加入）' : '';
       tr.innerHTML = `
         <td><input type="checkbox" data-id="${t.id}" ${disabled}></td>
         <td>${t.id}</td>
         <td>${t.name} ${title}</td>
-        <td>${t.cat}</td>
+        <td></td>
       `;
       tblAllBody.appendChild(tr);
     }
   }
 
-  function addSelected(){
-    const checks = qsa('input[type="checkbox"][data-id]:checked', tblAllBody);
-    if (!checks.length) return;
-    const list = ROLE_TASKS[currentRoleId] || (ROLE_TASKS[currentRoleId]=[]);
-    const exists = new Set(list);
-    for (const ck of checks){
-      const id = ck.getAttribute('data-id');
-      if (!exists.has(id)){
-        list.push(id);
-        exists.add(id);
-      }
-    }
-    // 清空勾選並重繪
-    chkAll.checked = false;
-    renderCurrent();
+  async function refreshAssigned(){
+    const list = await fetchJSON('/api/role/tasks?RoleId=' + encodeURIComponent(currentRoleId));
+    ASSIGNED = new Set(list.map(x=>x.TaskId));
+    renderCurrentRows(list);
     renderAll('');
+  }
+
+  async function addSelected(){
+    const ids = qsa('input[type="checkbox"][data-id]:checked', tblAllBody).map(el=>el.getAttribute('data-id'));
+    if (!ids.length) return;
+    await fetchJSON('/api/role/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ RoleId: currentRoleId, TaskIds: ids }) });
+    chkAll.checked = false;
+    await refreshAssigned();
   }
 
   // Events
@@ -202,23 +170,33 @@
     const enabled = qsa('input[type="checkbox"][data-id]:not([disabled])', tblAllBody);
     for (const c of enabled){ c.checked = chkAll.checked; }
   });
-  btnAddSelected.addEventListener('click', addSelected);
-  tblCurBody.addEventListener('click', (e) => {
+  btnAddSelected.addEventListener('click', () => { addSelected().catch(console.error); });
+  tblCurBody.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-remove]');
     if (!btn) return;
     const id = btn.getAttribute('data-remove');
-    const arr = ROLE_TASKS[currentRoleId] || [];
-    const idx = arr.indexOf(id);
-    if (idx >= 0) arr.splice(idx, 1);
-    renderCurrent();
-    renderAll('');
+    try{
+      await fetchJSON('/api/role/tasks?RoleId=' + encodeURIComponent(currentRoleId) + '&TaskId=' + encodeURIComponent(id), { method:'DELETE' });
+      await refreshAssigned();
+    }catch(err){ console.error(err); }
   });
+  if (btnBack){
+    btnBack.addEventListener('click', (e)=>{ e.preventDefault(); try{ history.back(); } catch(_){} window.location.href = '/Role'; });
+  }
 
   // Init
-  const qRoleId = getQuery('roleId') || 'HR-ADMIN';
-  loadRole(qRoleId);
-  renderCurrent();
-  renderAll('');
+  (async function init(){
+    try{
+      const rid = getQuery('RoleId') || getQuery('roleId') || '';
+      if (!rid){ alert('缺少 RoleId'); window.location.href='/Role'; return; }
+      currentRoleId = rid;
+      const role = await fetchJSON('/api/role?RoleId=' + encodeURIComponent(rid)).catch(()=>({}));
+      if (role && role.RoleId){ roleLabel.textContent = `${role.RoleId}｜${role.RoleName||''}`; }
+      const tasks = await fetchJSON('/api/tasks');
+      ALL_TASKS = (Array.isArray(tasks)?tasks:[]).map(t=>({ id: t.id || t.TaskId || t.taskId || '', name: t.name || t.TaskName || t.taskName || '' })).filter(t=>t.id);
+      await refreshAssigned();
+    }catch(e){ console.error(e); }
+  })();
   </script>
 </body>
 <!-- DBProj01_17_RoleTasks -->

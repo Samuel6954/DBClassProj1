@@ -22,7 +22,7 @@
         <div class="panel-header">
           <div class="panel-title">員工資料</div>
           <div class="panel-actions">
-            <a class="btn" href="DBProj01_03_Employee.html">返回清單</a>
+            <a class="btn" href="/Employee" id="btnBack">返回清單</a>
           </div>
         </div>
         <div class="panel-body">
@@ -95,100 +95,72 @@
   </div>
 
   <script>
-  // Demo data
-  const EMPLOYEES = [
-    { id: 'U0001', name: '張小華' },
-    { id: 'U0002', name: '王大明' },
-  ];
-
-  const PROGRAMS = [
-    { code: 'PRG_LEAVE', name: '請假系統', desc: '員工請假申請與核准' },
-    { code: 'PRG_HR_RPT', name: '人事報表', desc: '人事統計與報表' },
-    { code: 'PRG_PORTAL', name: '員工入口', desc: '個人化首頁' },
-    { code: 'PRG_ISSUE', name: '問題單', desc: '維運問題單管理' },
-    { code: 'PRG_DEPLOY', name: '部署工具', desc: '系統部署作業' },
-  ];
-
-  // employee -> favorite programs
-  const EMP_PROGS = {
-    'U0001': ['PRG_LEAVE', 'PRG_HR_RPT'],
-  };
-
   // Helpers
   function qs(sel, root=document){ return root.querySelector(sel); }
   function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
   function getQuery(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
-  function progByCode(code){ return PROGRAMS.find(p=>p.code===code); }
+  async function fetchJSON(url, opt){ const r = await fetch(url, opt); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 
   // Elements
   const empLabel = qs('#EmpLabel');
   const tblCurBody = qs('#tblCurrent tbody');
   const hintCurrent = qs('#hintCurrent');
-
   const tblAllBody = qs('#tblAll tbody');
   const chkAll = qs('#chkAll');
   const btnAddSelected = qs('#btnAddSelected');
+  const btnBack = qs('#btnBack');
 
   let currentEmpId = '';
+  let ALL_PROGRAMS = [];
+  let ASSIGNED = new Set();
 
-  function loadEmployee(empId){
-    const emp = EMPLOYEES.find(e=>e.id===empId) || EMPLOYEES[0];
-    currentEmpId = emp.id;
-    if (empLabel) empLabel.textContent = `${emp.id}｜${emp.name}`;
-  }
-
-  function renderCurrent(){
-    const codes = EMP_PROGS[currentEmpId] || [];
+  function renderCurrentRows(items){
     tblCurBody.innerHTML = '';
-    for (const c of codes){
-      const p = progByCode(c);
-      if (!p) continue;
+    for (const p of (items||[])){
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${p.code}</td>
-        <td>${p.name}</td>
-        <td>${p.desc || ''}</td>
-        <td><button class="btn danger" data-remove="${p.code}" type="button">移除</button></td>
+        <td>${p.ProgId || ''}</td>
+        <td>${p.ProgName || ''}</td>
+        <td></td>
+        <td><button class="btn danger" data-remove="${p.ProgId}" type="button">移除</button></td>
       `;
       tblCurBody.appendChild(tr);
     }
-    hintCurrent.textContent = `顯示 ${codes.length} 筆`;
+    hintCurrent.textContent = `顯示 ${items.length} 筆`;
   }
 
   function renderAll(filter=''){
-    const kw = filter.trim().toLowerCase();
-    const existed = new Set(EMP_PROGS[currentEmpId] || []);
+    const kw = (filter||'').trim().toLowerCase();
     tblAllBody.innerHTML = '';
-    for (const p of PROGRAMS){
-      if (kw && !(`${p.code} ${p.name} ${p.cat} ${p.desc}`.toLowerCase().includes(kw))) continue;
+    for (const p of ALL_PROGRAMS){
+      const code = p.code || p.ProgId || '';
+      const name = p.name || p.ProgName || '';
+      if (kw && !(`${code} ${name}`.toLowerCase().includes(kw))) continue;
+      const disabled = ASSIGNED.has(code) ? 'disabled' : '';
+      const title = ASSIGNED.has(code) ? '（已加入）' : '';
       const tr = document.createElement('tr');
-      const disabled = existed.has(p.code) ? 'disabled' : '';
-      const title = existed.has(p.code) ? '（已加入）' : '';
       tr.innerHTML = `
-        <td><input type="checkbox" data-code="${p.code}" ${disabled}></td>
-        <td>${p.code}</td>
-        <td>${p.name} ${title}</td>
+        <td><input type="checkbox" data-code="${code}" ${disabled}></td>
+        <td>${code}</td>
+        <td>${name} ${title}</td>
       `;
       tblAllBody.appendChild(tr);
     }
   }
 
-  function addSelected(){
-    const checks = qsa('input[type="checkbox"][data-code]:checked', tblAllBody);
-    if (!checks.length) return;
-    const list = EMP_PROGS[currentEmpId] || (EMP_PROGS[currentEmpId]=[]);
-    const exists = new Set(list);
-    for (const ck of checks){
-      const code = ck.getAttribute('data-code');
-      if (!exists.has(code)){
-        list.push(code);
-        exists.add(code);
-      }
-    }
-    // 清空勾選並重繪
-    chkAll.checked = false;
-    renderCurrent();
+  async function refreshAssigned(){
+    const list = await fetchJSON('/api/employee/programs?EmployeeId=' + encodeURIComponent(currentEmpId));
+    ASSIGNED = new Set(list.map(x=>x.ProgId));
+    renderCurrentRows(list);
     renderAll('');
+  }
+
+  async function addSelected(){
+    const ids = qsa('input[type="checkbox"][data-code]:checked', tblAllBody).map(el=>el.getAttribute('data-code'));
+    if (!ids.length) return;
+    await fetchJSON('/api/employee/programs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ EmployeeId: currentEmpId, ProgIds: ids }) });
+    chkAll.checked = false;
+    await refreshAssigned();
   }
 
   // Events
@@ -196,23 +168,33 @@
     const enabled = qsa('input[type="checkbox"][data-code]:not([disabled])', tblAllBody);
     for (const c of enabled){ c.checked = chkAll.checked; }
   });
-  btnAddSelected.addEventListener('click', addSelected);
-  tblCurBody.addEventListener('click', (e) => {
+  btnAddSelected.addEventListener('click', () => { addSelected().catch(console.error); });
+  tblCurBody.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-remove]');
     if (!btn) return;
     const code = btn.getAttribute('data-remove');
-    const arr = EMP_PROGS[currentEmpId] || [];
-    const idx = arr.indexOf(code);
-    if (idx >= 0) arr.splice(idx, 1);
-    renderCurrent();
-    renderAll('');
+    try{
+      await fetchJSON('/api/employee/programs?EmployeeId=' + encodeURIComponent(currentEmpId) + '&ProgId=' + encodeURIComponent(code), { method:'DELETE' });
+      await refreshAssigned();
+    }catch(err){ console.error(err); }
   });
+  if (btnBack){
+    btnBack.addEventListener('click', (e)=>{ e.preventDefault(); try{ history.back(); } catch(_){} window.location.href = '/Employee'; });
+  }
 
   // Init
-  const qEmpId = getQuery('empId') || 'U0001';
-  loadEmployee(qEmpId);
-  renderCurrent();
-  renderAll('');
+  (async function init(){
+    try{
+      const eid = getQuery('EmployeeId') || getQuery('empId') || '';
+      if (!eid){ alert('缺少 EmployeeId'); window.location.href='/Employee'; return; }
+      currentEmpId = eid;
+      const emp = await fetchJSON('/api/employee?EmployeeId=' + encodeURIComponent(eid)).catch(()=>({}));
+      if (emp && emp.EmployeeId){ empLabel.textContent = `${emp.EmployeeId}｜${emp.EmployeeName||''}`; }
+      const programs = await fetchJSON('/api/programs');
+      ALL_PROGRAMS = (Array.isArray(programs)?programs:[]);
+      await refreshAssigned();
+    }catch(e){ console.error(e); }
+  })();
   </script>
 </body>
 <!-- DBProj01_18_EmployeeProg -->

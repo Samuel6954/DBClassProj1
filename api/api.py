@@ -38,6 +38,14 @@ from .sql import (
     program_in_use,
     list_programs_of_employee,
     list_programs_of_role,
+    list_tasks_of_role,
+    add_role_tasks,
+    delete_role_task,
+    list_programs_of_task,
+    add_task_programs,
+    delete_task_program,
+    add_employee_programs,
+    delete_employee_program,
 )
 
 
@@ -67,6 +75,42 @@ def api_taskprogs():
     if DB.connection_pool is None:
         return jsonify([])
     return jsonify(list_task_program_codes(task_id))
+
+
+@bp.get("/task/programs")
+def api_task_programs():
+    if DB.connection_pool is None:
+        return jsonify([])
+    tid = (request.args.get("TaskId") or request.args.get("taskId") or "").strip()
+    if not tid:
+        return jsonify([])
+    return jsonify(list_programs_of_task(tid))
+
+
+@bp.post("/task/programs")
+def api_task_programs_add():
+    if DB.connection_pool is None:
+        return jsonify({"error": "db not ready"}), 503
+    p = request.get_json(silent=True) or {}
+    tid = (p.get("TaskId") or p.get("taskId") or "").strip()
+    items = p.get("ProgIds") or p.get("progIds") or p.get("ProgId") or []
+    prog_ids = [items] if isinstance(items, str) else [str(x) for x in (items or []) if str(x).strip()]
+    if not tid or not prog_ids:
+        return jsonify({"ok": False, "error": "TaskId/ProgIds required"}), 400
+    inserted = add_task_programs(tid, prog_ids)
+    return jsonify({"ok": True, "inserted": inserted, "requested": len(prog_ids)})
+
+
+@bp.delete("/task/programs")
+def api_task_programs_delete():
+    if DB.connection_pool is None:
+        return jsonify({"error": "db not ready"}), 503
+    tid = (request.args.get("TaskId") or request.args.get("taskId") or "").strip()
+    pid = (request.args.get("ProgId") or request.args.get("progId") or "").strip()
+    if not tid or not pid:
+        return jsonify({"ok": False, "error": "TaskId/ProgId required"}), 400
+    a = delete_task_program(tid, pid)
+    return jsonify({"ok": a > 0, "affected": a})
 
 
 @bp.get("/units")
@@ -281,6 +325,32 @@ def api_employee_programs():
     return jsonify(list_programs_of_employee(eid))
 
 
+@bp.post("/employee/programs")
+def api_employee_programs_add():
+    if DB.connection_pool is None:
+        return jsonify({"error": "db not ready"}), 503
+    p = request.get_json(silent=True) or {}
+    eid = (p.get("EmployeeId") or p.get("employeeId") or "").strip()
+    items = p.get("ProgIds") or p.get("progIds") or p.get("ProgId") or []
+    prog_ids = [items] if isinstance(items, str) else [str(x) for x in (items or []) if str(x).strip()]
+    if not eid or not prog_ids:
+        return jsonify({"ok": False, "error": "EmployeeId/ProgIds required"}), 400
+    inserted = add_employee_programs(eid, prog_ids)
+    return jsonify({"ok": True, "inserted": inserted, "requested": len(prog_ids)})
+
+
+@bp.delete("/employee/programs")
+def api_employee_programs_delete():
+    if DB.connection_pool is None:
+        return jsonify({"error": "db not ready"}), 503
+    eid = (request.args.get("EmployeeId") or request.args.get("employeeId") or "").strip()
+    pid = (request.args.get("ProgId") or request.args.get("progId") or "").strip()
+    if not eid or not pid:
+        return jsonify({"ok": False, "error": "EmployeeId/ProgId required"}), 400
+    a = delete_employee_program(eid, pid)
+    return jsonify({"ok": a > 0, "affected": a})
+
+
 @bp.get("/role/programs")
 def api_role_programs():
     if DB.connection_pool is None:
@@ -289,6 +359,45 @@ def api_role_programs():
     if not rid:
         return jsonify([])
     return jsonify(list_programs_of_role(rid))
+
+
+@bp.get("/role/tasks")
+def api_role_tasks():
+    if DB.connection_pool is None:
+        return jsonify([])
+    rid = (request.args.get("RoleId") or request.args.get("roleId") or "").strip()
+    if not rid:
+        return jsonify([])
+    return jsonify(list_tasks_of_role(rid))
+
+
+@bp.post("/role/tasks")
+def api_role_tasks_add():
+    if DB.connection_pool is None:
+        return jsonify({"error": "db not ready"}), 503
+    p = request.get_json(silent=True) or {}
+    rid = (p.get("RoleId") or p.get("roleId") or "").strip()
+    items = p.get("TaskIds") or p.get("taskIds") or p.get("TaskId") or []
+    if isinstance(items, str):
+        task_ids = [items]
+    else:
+        task_ids = [str(x) for x in (items or []) if str(x).strip()]
+    if not rid or not task_ids:
+        return jsonify({"ok": False, "error": "RoleId/TaskIds required"}), 400
+    inserted = add_role_tasks(rid, task_ids)
+    return jsonify({"ok": True, "inserted": inserted, "requested": len(task_ids)})
+
+
+@bp.delete("/role/tasks")
+def api_role_tasks_delete():
+    if DB.connection_pool is None:
+        return jsonify({"error": "db not ready"}), 503
+    rid = (request.args.get("RoleId") or request.args.get("roleId") or "").strip()
+    tid = (request.args.get("TaskId") or request.args.get("taskId") or "").strip()
+    if not rid or not tid:
+        return jsonify({"ok": False, "error": "RoleId/TaskId required"}), 400
+    a = delete_role_task(rid, tid)
+    return jsonify({"ok": a > 0, "affected": a})
 
 
 @bp.get("/employee")

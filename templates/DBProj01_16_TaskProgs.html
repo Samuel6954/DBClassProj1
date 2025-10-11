@@ -22,7 +22,7 @@
         <div class="panel-header">
           <div class="panel-title">作業資訊</div>
           <div class="panel-actions">
-            <a class="btn" href="DBProj01_04_Task.html">返回清單</a>
+            <a class="btn" href="/Task" id="btnBack">返回清單</a>
           </div>
         </div>
         <div class="panel-body">
@@ -106,6 +106,7 @@
   function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
   function getQuery(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
   function progByCode(code){ return (window.PROGRAMS||[]).find(p=>p.code===code); }
+  async function fetchJSON(url, opt){ const r = await fetch(url, opt); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
 
   // Elements
   const inpTaskId = qs('#TaskId');
@@ -122,67 +123,60 @@
   window.PROGRAMS = [];
 
   function loadTask(taskId){
-    const task = (window.TASKS||[]).find(t=>t.id===taskId) || (window.TASKS||[])[0] || {id:'', name:''};
+    const task = (window.TASKS||[]).find(t=>t.id===taskId) || {id:'', name:''};
     currentTaskId = task.id;
     inpTaskId.value = task.id;
     inpTaskName.value = task.name;
   }
 
-  function renderCurrent(){
-    const codes = (window.TASK_PROGS||{})[currentTaskId] || [];
+  async function renderCurrent(){
     tblCurBody.innerHTML = '';
-    for (const c of codes){
-      const p = progByCode(c);
-      if (!p) continue;
+    const list = await fetchJSON('/api/task/programs?TaskId=' + encodeURIComponent(currentTaskId));
+    for (const p of (Array.isArray(list)?list:[])){
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${p.code}</td>
-        <td>${p.name}</td>
-        <td>${p.cat}</td>
+        <td>${p.ProgId || ''}</td>
+        <td>${p.ProgName || ''}</td>
+        <td>${p.Category || ''}</td>
         <td></td>
-        <td><button class="btn danger" data-remove="${p.code}" type="button">移除</button></td>
+        <td><button class="btn danger" data-remove="${p.ProgId}" type="button">移除</button></td>
       `;
       tblCurBody.appendChild(tr);
     }
-    hintCurrent.textContent = `顯示 ${codes.length} 筆`;
+    hintCurrent.textContent = `顯示 ${tblCurBody.querySelectorAll('tr').length} 筆`;
   }
 
-  function renderAll(filter=''){
+  async function renderAll(filter=''){
     const kw = filter.trim().toLowerCase();
-    const existed = new Set(((window.TASK_PROGS||{})[currentTaskId]) || []);
+    // fetch current to disable existed
+    const existsCodes = new Set((await fetchJSON('/api/taskprogs?taskId=' + encodeURIComponent(currentTaskId))) || []);
     tblAllBody.innerHTML = '';
     for (const p of (window.PROGRAMS||[])){
-      if (kw && !(`${p.code} ${p.name} ${p.cat}`.toLowerCase().includes(kw))) continue;
+      const code = p.code || p.ProgId || '';
+      const name = p.name || p.ProgName || '';
+      const cat = p.cat || p.Category || '';
+      if (kw && !(`${code} ${name} ${cat}`.toLowerCase().includes(kw))) continue;
+      const disabled = existsCodes.has(code) ? 'disabled' : '';
+      const title = existsCodes.has(code) ? '（已加入）' : '';
       const tr = document.createElement('tr');
-      const disabled = existed.has(p.code) ? 'disabled' : '';
-      const title = existed.has(p.code) ? '（已加入）' : '';
       tr.innerHTML = `
-        <td><input type="checkbox" data-code="${p.code}" ${disabled}></td>
-        <td>${p.code}</td>
-        <td>${p.name} ${title}</td>
-        <td>${p.cat}</td>
+        <td><input type="checkbox" data-code="${code}" ${disabled}></td>
+        <td>${code}</td>
+        <td>${name} ${title}</td>
+        <td>${cat}</td>
       `;
       tblAllBody.appendChild(tr);
     }
   }
 
-  function addSelected(){
+  async function addSelected(){
     const checks = qsa('input[type="checkbox"][data-code]:checked', tblAllBody);
     if (!checks.length) return;
-    const tp = (window.TASK_PROGS = window.TASK_PROGS || {});
-    const list = tp[currentTaskId] || (tp[currentTaskId]=[]);
-    const exists = new Set(list);
-    for (const ck of checks){
-      const code = ck.getAttribute('data-code');
-      if (!exists.has(code)){
-        list.push(code);
-        exists.add(code);
-      }
-    }
-    // 清空全選並刷新
+    const codes = checks.map(ck=>ck.getAttribute('data-code'));
+    await fetchJSON('/api/task/programs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ TaskId: currentTaskId, ProgIds: codes }) });
     chkAll.checked = false;
-    renderCurrent();
-    renderAll('');
+    await renderCurrent();
+    await renderAll('');
   }
 
   // Events
@@ -191,22 +185,14 @@
     for (const c of enabled){ c.checked = chkAll.checked; }
   });
   btnAddSelected.addEventListener('click', addSelected);
-  tblCurBody.addEventListener('click', (e) => {
+  tblCurBody.addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-remove]');
     if (!btn) return;
     const code = btn.getAttribute('data-remove');
-    const arr = (window.TASK_PROGS||{})[currentTaskId] || [];
-    const idx = arr.indexOf(code);
-    if (idx >= 0) arr.splice(idx, 1);
-    renderCurrent();
-    renderAll('');
+    await fetchJSON('/api/task/programs?TaskId=' + encodeURIComponent(currentTaskId) + '&ProgId=' + encodeURIComponent(code), { method:'DELETE' });
+    await renderCurrent();
+    await renderAll('');
   });
-
-  async function fetchJSON(url){
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
-  }
 
   async function init(){
     try {
@@ -217,21 +203,26 @@
       window.TASKS = tasks || [];
       window.PROGRAMS = programs || [];
 
-      const qTaskId = getQuery('taskId') || (tasks[0]?.id || '');
+      const qTaskId = getQuery('TaskId') || getQuery('taskId') || (tasks[0]?.id || '');
+      if (!qTaskId){ alert('缺少 TaskId'); window.location.href = '/Task'; return; }
       loadTask(qTaskId);
 
-      const codes = await fetchJSON('/api/taskprogs?taskId=' + encodeURIComponent(currentTaskId));
-      window.TASK_PROGS = {};
-      window.TASK_PROGS[currentTaskId] = Array.isArray(codes) ? codes : [];
-
-      renderCurrent();
-      renderAll('');
+      await renderCurrent();
+      await renderAll('');
     } catch(e){
       console.error('Init failed:', e);
     }
   }
 
   init();
+  </script>
+  <script>
+  // Back button: history.back with fallback
+  (function(){
+    var back = document.getElementById('btnBack');
+    if (!back) return;
+    back.addEventListener('click', function(ev){ ev.preventDefault(); try{ history.back(); }catch(_){ } window.location.href='/Task'; });
+  })();
   </script>
   <script>
   // 將作業資訊改為直接顯示「作業代碼 + 作業名稱」而非輸入框
@@ -252,4 +243,3 @@
 </body>
 <!-- DBProj01_16_TaskProgs -->
 </html>
-

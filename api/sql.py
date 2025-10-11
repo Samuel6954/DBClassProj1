@@ -135,6 +135,35 @@ def list_task_program_codes(task_id: str) -> List[str]:
     return [r[0] for r in rows]
 
 
+def list_programs_of_task(task_id: str) -> List[dict]:
+    """Return detailed programs of a task by joining TaskProgs -> Program."""
+    if DB.connection_pool is None:
+        return []
+    has_cat = table_has_column("Program", "Category")
+    select_cat = 'COALESCE(p."Category",\'\')' if has_cat else "''"
+    sql = f'SELECT p."ProgId", p."ProgName", {select_cat} FROM "TaskProgs" tp JOIN "Program" p ON p."ProgId"=tp."ProgId" WHERE tp."TaskId"=%s ORDER BY p."ProgId"'
+    rows = DB.fetchall(sql, (task_id,))
+    return [{"ProgId": r[0], "ProgName": r[1], "Category": r[2]} for r in rows]
+
+
+def add_task_programs(task_id: str, prog_ids: List[str]) -> int:
+    if DB.connection_pool is None:
+        return 0
+    total = 0
+    for pid in (prog_ids or []):
+        if not pid:
+            continue
+        a = DB.execute('INSERT INTO "TaskProgs" ("TaskId","ProgId") VALUES (%s,%s) ON CONFLICT ("TaskId","ProgId") DO NOTHING', (task_id, pid))
+        total += max(0, a)
+    return total
+
+
+def delete_task_program(task_id: str, prog_id: str) -> int:
+    if DB.connection_pool is None:
+        return 0
+    return DB.execute('DELETE FROM "TaskProgs" WHERE "TaskId"=%s AND "ProgId"=%s', (task_id, prog_id))
+
+
 def search_units(unit_id: Optional[str] = None,
                  unit_name: Optional[str] = None,
                  manager: Optional[str] = None) -> List[dict]:
@@ -503,6 +532,24 @@ def list_programs_of_employee(employee_id: str) -> List[dict]:
     return [{"ProgId": r[0], "ProgName": r[1], "Category": r[2]} for r in rows]
 
 
+def add_employee_programs(employee_id: str, prog_ids: List[str]) -> int:
+    if DB.connection_pool is None:
+        return 0
+    total = 0
+    for pid in (prog_ids or []):
+        if not pid:
+            continue
+        a = DB.execute('INSERT INTO "EmployeeProgs" ("EmployeeId","ProgId") VALUES (%s,%s) ON CONFLICT ("EmployeeId","ProgId") DO NOTHING', (employee_id, pid))
+        total += max(0, a)
+    return total
+
+
+def delete_employee_program(employee_id: str, prog_id: str) -> int:
+    if DB.connection_pool is None:
+        return 0
+    return DB.execute('DELETE FROM "EmployeeProgs" WHERE "EmployeeId"=%s AND "ProgId"=%s', (employee_id, prog_id))
+
+
 # Role → Programs (via RoleTasks -> TaskProgs -> Program)
 def list_programs_of_role(role_id: str) -> List[dict]:
     if DB.connection_pool is None:
@@ -519,3 +566,34 @@ def list_programs_of_role(role_id: str) -> List[dict]:
     )
     rows = DB.fetchall(sql, (role_id,))
     return [{"ProgId": r[0], "ProgName": r[1], "Category": r[2]} for r in rows]
+
+
+# Role ↔ Tasks
+def list_tasks_of_role(role_id: str) -> List[dict]:
+    if DB.connection_pool is None:
+        return []
+    sql = (
+        'SELECT t."TaskId", t."TaskName" '
+        'FROM "RoleTasks" rt JOIN "Task" t ON t."TaskId" = rt."TaskId" '
+        'WHERE rt."RoleId"=%s ORDER BY t."TaskId"'
+    )
+    rows = DB.fetchall(sql, (role_id,))
+    return [{"TaskId": r[0], "TaskName": r[1]} for r in rows]
+
+
+def add_role_tasks(role_id: str, task_ids: List[str]) -> int:
+    if DB.connection_pool is None:
+        return 0
+    affected_total = 0
+    for tid in (task_ids or []):
+        if not tid:
+            continue
+        a = DB.execute('INSERT INTO "RoleTasks" ("RoleId","TaskId") VALUES (%s,%s) ON CONFLICT ("RoleId","TaskId") DO NOTHING', (role_id, tid))
+        affected_total += max(0, a)
+    return affected_total
+
+
+def delete_role_task(role_id: str, task_id: str) -> int:
+    if DB.connection_pool is None:
+        return 0
+    return DB.execute('DELETE FROM "RoleTasks" WHERE "RoleId"=%s AND "TaskId"=%s', (role_id, task_id))
