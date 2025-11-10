@@ -1,5 +1,5 @@
+import os
 from flask import Flask, render_template
-
 
 def create_app() -> Flask:
     # Serve UI assets under "/assets" without changing existing HTML paths
@@ -85,8 +85,23 @@ def create_app() -> Flask:
 
     return app
 
+app = create_app()
 
 if __name__ == "__main__":
-    app = create_app()
-    # Enable reloader for local development
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # 讀取環境變數（Azure 預設會設定環境變數 "WEBSITE_HOSTNAME"）
+    is_azure = "WEBSITE_HOSTNAME" in os.environ
+
+    if is_azure:
+        # Azure 部署環境
+        app.run(host="0.0.0.0", port=8000, debug=False)
+    else:
+        # 本地開發環境
+        app.run(host="127.0.0.1", port=5000, debug=True)
+
+
+# app = create_app()
+
+# is_azure = bool(os.getenv("WEBSITE_HOSTNAME"))
+# port = int(os.getenv("PORT") or os.getenv("WEBSITES_PORT") or 5000)
+# host = "0.0.0.0" if is_azure else "127.0.0.1"
+# app.run(host=host, port=port, debug=not is_azure)

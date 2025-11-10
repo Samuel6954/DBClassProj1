@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ERP 設定平台 | Portal</title>
+  <link rel="stylesheet" href="assets/tech.css" />
+  <style>
+    /* Lightweight tree and chips styling (page-local) */
+    .chips { display:flex; gap:8px; flex-wrap: wrap; }
+    .chip { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:999px; background:#13243a; }
+    .chip .code { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+    .chip .name { font-size: 13px; }
+    .chip .x { cursor:pointer; color:#ffd1d7; }
+    .chip:hover { border-color: var(--primary); }
+
+    .tree { list-style:none; padding:0; margin:0; }
+    .tree li { margin: 2px 0; }
+    .tree .item { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; cursor:pointer; background:#13243a; }
+    .tree .item:hover { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59,209,255,0.08); }
+    .tree .item.selected { border-color: var(--primary); background: rgba(59,209,255,0.08); }
+    .tree .tag { font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); opacity:0.9; }
+    .tree .name { font-size: 14px; }
+
+    .mono { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .small { font-size:12px; }
+    .muted { color: var(--muted); }
+    .actions { display:flex; gap:8px; }
+    .nowrap { white-space: nowrap; }
+    .right { margin-left: auto; }
+    .star { cursor:pointer; font-size:16px; }
+    .star.add { color:#ffe08a; }
+    .star.remove { color:#ffd1d7; }
+
+    /* Remove inner scrollbars for program list on this page */
+    .table-wrap.no-scroll { overflow: visible; }
+    .table-wrap.no-scroll table { min-width: 0 !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="logo" aria-hidden="true"></div>
+        <div class="title">ERP 設定平台｜工作平台</div>
+        <div id="empInfo" class="breadcrumbs">使用者：－</div>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Favorites -->
+      <section class="panel subtle-grid">
+        <div class="panel-header">
+          <div class="panel-title">個人常用程式</div>
+          <div class="panel-actions">
+            <span id="favHint" class="hint">尚未加入常用程式</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="favWrap" class="chips" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <div class="spacer"></div>
+
+      <!-- Workspace split: left tree, right program list -->
+      <div class="grid">
+        <div class="col-6">
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">可用作業（依職務）</div>
+              <div class="panel-actions">
+                <span id="taskCount" class="hint">0 項</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="grid">
+                <div class="col-12">
+                  <label for="taskFilter">快速篩選</label>
+                  <input id="taskFilter" type="search" placeholder="輸入作業代碼或名稱…" />
+                </div>
+                <div class="col-12">
+                  <ul id="taskTree" class="tree" role="tree"></ul>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div class="col-6">
+          <section class="panel">
+            <div class="panel-header">
+              <div class="panel-title">程式清單</div>
+              <div class="panel-actions right">
+                <span id="progHint" class="hint">尚未選擇作業</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="table-wrap no-scroll">
+                <table id="tblPrograms">
+                  <thead>
+                    <tr>
+                      <th style="width: 140px;">程式代碼</th>
+                      <th>程式名稱</th>
+                      <th style="width: 100px;">分類</th>
+                      <th style="width: 120px;">常用</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer id="portalStatus" class="footer">
+      提示：點選左側「作業」以顯示對應程式；點擊星號可加入常用。
+    </footer>
+  </div>
+
+  <script>
+  // --- Demo data (可視需要改為呼叫 /api) ---
+  const EMPLOYEES = [
+    { id: 'E1001', name: '王小明', unitId: 'HR001', unitName: '人力資源部', roleId: 'HR' },
+    { id: 'E2001', name: '林大雄', unitId: 'IT001', unitName: '資訊管理部', roleId: 'IT' },
+  ];
+
+  const ROLES = [
+    { id: 'HR', name: '人資專員' },
+    { id: 'IT', name: 'IT 維運' },
+    { id: 'FIN', name: '財務會計' },
+    { id: 'ADMIN', name: '系統管理員' },
+  ];
+
+  const TASKS = [
+    { id: 'TASK-RECRUIT', name: '人員招募作業' },
+    { id: 'TASK-ONBOARD', name: '新人報到作業' },
+    { id: 'TASK-ITOPS', name: 'IT 維運作業' },
+    { id: 'TASK-FIN', name: '財務會計作業' },
+  ];
+
+  // 角色 → 可用作業 (RoleTasks)
+  const ROLE_TASKS = {
+    'HR': ['TASK-RECRUIT', 'TASK-ONBOARD'],
+    'IT': ['TASK-ITOPS'],
+    'FIN': ['TASK-FIN'],
+    'ADMIN': TASKS.map(t => t.id),
+  };
+
+  const PROGRAMS = [
+    { code: 'PRG_RECRUIT_APPLY', name: '招募申請', cat: 'HR' },
+    { code: 'PRG_RECRUIT_RPT', name: '招募報表', cat: 'HR' },
+    { code: 'PRG_HR_ONBOARD', name: '新人報到', cat: 'HR' },
+    { code: 'PRG_HR_LEAVE', name: '請假系統', cat: 'HR' },
+    { code: 'PRG_ISSUE', name: '問題單', cat: 'IT' },
+    { code: 'PRG_DEPLOY', name: '部署工具', cat: 'IT' },
+    { code: 'PRG_GL', name: '總帳系統', cat: 'FIN' },
+  ];
+
+  // 作業 → 可用程式 (TaskProgs)
+  const TASK_PROGS = {
+    'TASK-RECRUIT': ['PRG_RECRUIT_APPLY', 'PRG_RECRUIT_RPT'],
+    'TASK-ONBOARD': ['PRG_HR_ONBOARD', 'PRG_HR_LEAVE'],
+    'TASK-ITOPS': ['PRG_ISSUE', 'PRG_DEPLOY'],
+    'TASK-FIN': ['PRG_GL'],
+  };
+
+  // --- Helpers ---
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+  const byId = id => document.getElementById(id);
+  const getQuery = (name) => new URL(location.href).searchParams.get(name);
+
+  const empInfo = byId('empInfo');
+  const favWrap = byId('favWrap');
+  const favHint = byId('favHint');
+  const taskFilter = byId('taskFilter');
+  const taskTree = byId('taskTree');
+  const taskCount = byId('taskCount');
+  const tblPrograms = byId('tblPrograms');
+  const progHint = byId('progHint');
+  const portalStatus = byId('portalStatus');
+
+  let currentEmpId = '';
+  let currentRoleId = '';
+  let currentTaskId = '';
+  const DEFAULT_FAVORITES = ['PRG_HR_LEAVE', 'PRG_ISSUE', 'PRG_GL'];
+
+  function pickEmployee() {
+    const q = (getQuery('empId') || '').trim();
+    const emp = EMPLOYEES.find(e => e.id === q) || EMPLOYEES[0];
+    return emp;
+  }
+
+  function setEmpInfo(emp) {
+    empInfo.textContent = `使用者：${emp.name}｜${emp.unitName}`;
+  }
+
+  function favKey(empId) { return `DBP1:favorites:${empId}`; }
+  function getFavorites(empId) {
+    try {
+      const raw = localStorage.getItem(favKey(empId));
+      return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+  }
+  function setFavorites(empId, list) {
+    try { localStorage.setItem(favKey(empId), JSON.stringify(list || [])); } catch (_) {}
+  }
+
+  function programByCode(code) { return PROGRAMS.find(p => p.code === code); }
+  function taskById(id) { return TASKS.find(t => t.id === id); }
+
+  function renderFavorites() {
+    const favs = getFavorites(currentEmpId);
+    favWrap.innerHTML = '';
+    if (!favs.length) {
+      favHint.textContent = '尚未加入常用程式';
+      return;
+    }
+    favHint.textContent = `共 ${favs.length} 項`;
+    for (const code of favs) {
+      const p = programByCode(code);
+      if (!p) continue;
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.innerHTML = `
+        <span class="code">${p.code}</span>
+        <span class="name">${p.name}</span>
+        <span class="mono muted">${p.cat || ''}</span>
+      `;
+      chip.addEventListener('click', () => {
+        // 模擬開啟程式
+        portalStatus.textContent = `已開啟程式：${p.code}｜${p.name}`;
+      });
+      favWrap.appendChild(chip);
+    }
+  }
+
+  function renderTaskTree() {
+    const all = ROLE_TASKS[currentRoleId] || [];
+    const kw = (taskFilter.value || '').trim().toLowerCase();
+    const list = all
+      .map(id => taskById(id))
+      .filter(Boolean)
+      .filter(t => !kw || (t.id + ' ' + t.name).toLowerCase().includes(kw));
+    taskTree.innerHTML = '';
+    for (const t of list) {
+      const li = document.createElement('li');
+      const div = document.createElement('div');
+      div.className = 'item' + (t.id === currentTaskId ? ' selected' : '');
+      div.setAttribute('role', 'treeitem');
+      div.setAttribute('tabindex', '0');
+      div.dataset.taskId = t.id;
+      div.innerHTML = `
+        <span class="tag">${t.id}</span>
+        <span class="name">${t.name}</span>
+      `;
+      div.addEventListener('click', () => selectTask(t.id));
+      div.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectTask(t.id); } });
+      li.appendChild(div);
+      taskTree.appendChild(li);
+    }
+    taskCount.textContent = `${list.length} 項`;
+  }
+
+  function selectTask(taskId) {
+    currentTaskId = taskId;
+    renderTaskTree();
+    renderPrograms();
+  }
+
+  function renderPrograms() {
+    const tbody = $('#tblPrograms tbody');
+    tbody.innerHTML = '';
+    if (!currentTaskId) { progHint.textContent = '尚未選擇作業'; return; }
+    const task = taskById(currentTaskId);
+    const favs = new Set(getFavorites(currentEmpId));
+    const codes = TASK_PROGS[currentTaskId] || [];
+    progHint.textContent = `${task.id}｜${task.name}（共 ${codes.length} 筆）`;
+    for (const code of codes) {
+      const p = programByCode(code);
+      if (!p) continue;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${p.code}</td>
+        <td>${p.name}</td>
+        <td class="mono">${p.cat || ''}</td>
+        <td class="nowrap">
+          <span class="star ${favs.has(p.code) ? 'remove' : 'add'}" title="${favs.has(p.code) ? '自常用移除' : '加入常用'}" data-fav="${p.code}">${favs.has(p.code) ? '★ 移除' : '☆ 加入'}</span>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function toggleFavorite(code, forceAdd) {
+    const favs = new Set(getFavorites(currentEmpId));
+    const wantAdd = typeof forceAdd === 'boolean' ? forceAdd : !favs.has(code);
+    if (wantAdd) favs.add(code); else favs.delete(code);
+    setFavorites(currentEmpId, Array.from(favs));
+    renderFavorites();
+    renderPrograms();
+  }
+
+  // Wire events
+  taskFilter.addEventListener('input', renderTaskTree);
+  $('#tblPrograms').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-fav]');
+    if (!el) return;
+    const code = el.getAttribute('data-fav');
+    const isAdd = el.classList.contains('add');
+    toggleFavorite(code, isAdd);
+  });
+
+  // Init demo session
+  (function init() {
+    const emp = pickEmployee();
+    currentEmpId = emp.id;
+    currentRoleId = emp.roleId || 'HR';
+    setEmpInfo(emp);
+    // Seed a few favorites on first visit
+    if ((getFavorites(currentEmpId) || []).length === 0) {
+      const seeds = DEFAULT_FAVORITES.filter(code => !!programByCode(code));
+      if (seeds.length) setFavorites(currentEmpId, seeds);
+    }
+    renderFavorites();
+    renderTaskTree();
+    // Auto select first task for convenience
+    const first = (ROLE_TASKS[currentRoleId] || [])[0];
+    if (first) selectTask(first);
+  })();
+  </script>
+</body>
+<!-- DBProj01_Portal -->
+</html>

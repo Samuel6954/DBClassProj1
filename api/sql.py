@@ -92,7 +92,7 @@ class DB:
 
 
 # Initialize pool on import
-DB._init_pool()
+# DB._init_pool()
 
 
 def table_has_column(table_name: str, column_name: str) -> bool:
