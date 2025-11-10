@@ -185,11 +185,25 @@
         <td>${esc(uid)}</td>
         <td>${esc(u.UnitName || '')}</td>
         <td>${esc(u.ManagerName || '')}</td>
-        <td></td>
+        <td class="emp-count">查詢中...</td>
         <td>${esc(u.WorkIntroduce || '')}</td>
       `;
       tr.addEventListener('click', () => selectUnit(uid, u.UnitName||''));
       tblUnitsBody.appendChild(tr);
+
+      // Fetch and fill employee count per unit
+      (async () => {
+        try{
+          const data = await fetchJSON('/api/employees?UnitId=' + encodeURIComponent(uid));
+          const count = Array.isArray(data) ? data.length : 0;
+          const cell = tr.querySelector('.emp-count');
+          if (cell) cell.textContent = String(count);
+        }catch(e){
+          console.error(e);
+          const cell = tr.querySelector('.emp-count');
+          if (cell) cell.textContent = '—';
+        }
+      })();
     }
     unitCountHint.textContent = `顯示 ${arr.length} 筆`;
   }
