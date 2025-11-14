@@ -46,6 +46,7 @@ from .sql import (
     delete_task_program,
     add_employee_programs,
     delete_employee_program,
+    list_employees_of_program,
 )
 
 
@@ -67,6 +68,16 @@ def api_programs():
     if pid or pname or cat:
         return jsonify(search_programs(pid or None, pname or None, cat or None))
     return jsonify(list_programs())
+
+
+@bp.get("/program/employees")
+def api_program_employees():
+    if DB.connection_pool is None:
+        return jsonify([])
+    pid = (request.args.get("ProgId") or request.args.get("progId") or "").strip()
+    if not pid:
+        return jsonify([])
+    return jsonify(list_employees_of_program(pid))
 
 
 @bp.get("/taskprogs")

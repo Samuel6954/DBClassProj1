@@ -120,12 +120,18 @@ def list_tasks() -> List[dict]:
 
 
 def list_programs() -> List[dict]:
-    """Return programs from DB: [{code, name, cat}]"""
+    """Return programs from DB: [{code, name, cat, userCount}]"""
     if DB.connection_pool is None:
         return []
-    # ERP.sql Program table has only ProgId, ProgName; emit empty category
-    rows = DB.fetchall("SELECT \"ProgId\", \"ProgName\", '' AS \"Category\" FROM \"Program\" ORDER BY \"ProgId\"")
-    return [{"code": r[0], "name": r[1], "cat": r[2]} for r in rows]
+    # Include usage count from EmployeeProgs; Category may not exist in schema (kept as empty string here)
+    sql = (
+        'SELECT p."ProgId", p."ProgName", COALESCE(c.cnt,0) AS "UserCount" '
+        'FROM "Program" p '
+        'LEFT JOIN (SELECT "ProgId", COUNT(*)::int AS cnt FROM "EmployeeProgs" GROUP BY "ProgId") c ON c."ProgId"=p."ProgId" '
+        'ORDER BY p."ProgId"'
+    )
+    rows = DB.fetchall(sql)
+    return [{"code": r[0], "name": r[1], "cat": "", "userCount": int(r[2] or 0)} for r in rows]
 
 
 def list_task_program_codes(task_id: str) -> List[str]:
@@ -426,21 +432,29 @@ def search_programs(prog_id: Optional[str] = None,
         return []
     # Some DBs may not have Category column (see ERP.sql). Detect and adapt.
     has_cat = table_has_column("Program", "Category")
-    select_cat = 'COALESCE("Category",\'\')' if has_cat else "''"
-    sql = [f'SELECT "ProgId","ProgName", {select_cat} FROM "Program" WHERE 1=1']
+    select_cat = 'COALESCE(p."Category",\'\')' if has_cat else "''"
+    sql_parts = [
+        'SELECT p."ProgId", p."ProgName", ' + select_cat + ', COALESCE(c.cnt,0) AS "UserCount"',
+        'FROM "Program" p',
+        'LEFT JOIN (SELECT "ProgId", COUNT(*)::int AS cnt FROM "EmployeeProgs" GROUP BY "ProgId") c ON c."ProgId"=p."ProgId"',
+        'WHERE 1=1'
+    ]
     params: List[Any] = []
     if prog_id:
-        sql.append('AND "ProgId" ILIKE %s')
+        sql_parts.append('AND p."ProgId" ILIKE %s')
         params.append(f"%{prog_id}%")
     if prog_name:
-        sql.append('AND "ProgName" ILIKE %s')
+        sql_parts.append('AND p."ProgName" ILIKE %s')
         params.append(f"%{prog_name}%")
     if category and has_cat:
-        sql.append('AND COALESCE("Category",\'\') ILIKE %s')
+        sql_parts.append('AND COALESCE(p."Category",\'\') ILIKE %s')
         params.append(f"%{category}%")
-    sql.append('ORDER BY "ProgId"')
-    rows = DB.fetchall("\n".join(sql), tuple(params) if params else None)
-    return [{"ProgId": r[0], "ProgName": r[1], "Category": r[2]} for r in rows]
+    sql_parts.append('ORDER BY p."ProgId"')
+    rows = DB.fetchall("\n".join(sql_parts), tuple(params) if params else None)
+    return [
+        {"ProgId": r[0], "ProgName": r[1], "Category": r[2], "UserCount": int(r[3] or 0)}
+        for r in rows
+    ]
 
 
 def get_program_exact(prog_id: str) -> Optional[dict]:
@@ -597,3 +611,34 @@ def delete_role_task(role_id: str, task_id: str) -> int:
     if DB.connection_pool is None:
         return 0
     return DB.execute('DELETE FROM "RoleTasks" WHERE "RoleId"=%s AND "TaskId"=%s', (role_id, task_id))
+
+
+# Program → Employees
+def list_employees_of_program(prog_id: str) -> List[dict]:
+    """Return employees who have this program in EmployeeProgs.
+    Returns: [{EmployeeId, EmployeeName, UnitId, UnitName, RoleId, RoleName}]
+    """
+    if DB.connection_pool is None:
+        return []
+    sql = (
+        'SELECT e."EmployeeId", e."EmployeeName", e."UnitId", COALESCE(u."UnitName",\'\') AS "UnitName", '
+        'e."RoleId", COALESCE(r."RoleName",\'\') AS "RoleName" '
+        'FROM "EmployeeProgs" ep '
+        'JOIN "Employee" e ON e."EmployeeId" = ep."EmployeeId" '
+        'LEFT JOIN "Unit" u ON u."UnitId" = e."UnitId" '
+        'LEFT JOIN "Role" r ON r."RoleId" = e."RoleId" '
+        'WHERE ep."ProgId" = %s '
+        'ORDER BY e."EmployeeId"'
+    )
+    rows = DB.fetchall(sql, (prog_id,))
+    return [
+        {
+            "EmployeeId": r[0],
+            "EmployeeName": r[1],
+            "UnitId": r[2],
+            "UnitName": r[3],
+            "RoleId": r[4],
+            "RoleName": r[5],
+        }
+        for r in rows
+    ]

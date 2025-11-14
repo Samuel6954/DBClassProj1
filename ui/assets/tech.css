@@ -169,3 +169,4 @@ tr:hover td { background: rgba(59,209,255,0.06); }
 
 .link { color: var(--primary); text-decoration: none; }
 .link:hover { text-decoration: underline; }
+.link:visited { color: var(--primary); }

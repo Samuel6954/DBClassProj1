@@ -58,7 +58,32 @@
                 <tr>
                   <th>程式代碼</th>
                   <th>程式名稱</th>
+                  <th>使用人數</th>
                   <th>操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+      <div class="spacer"></div>
+
+      <!-- 使用人員 -->
+      <section class="panel" id="panelUsers" style="display:none">
+        <div class="panel-header">
+          <div class="panel-title">使用此程式的員工 <span id="progTitle" class="badge"></span></div>
+          <div class="panel-actions hint" id="usersHint">尚未選擇程式</div>
+        </div>
+        <div class="panel-body">
+          <div class="table-wrap">
+            <table id="tblUsers">
+              <thead>
+                <tr>
+                  <th>員工編號</th>
+                  <th>員工姓名</th>
+                  <th>任職單位</th>
+                  <th>作業權限</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -76,9 +101,21 @@
     const qProgName = document.getElementById('qProgName');
     const tbody = document.querySelector('#tblPrograms tbody');
     const hint = document.getElementById('hint');
+    const panelUsers = document.getElementById('panelUsers');
+    const progTitle = document.getElementById('progTitle');
+    const usersHint = document.getElementById('usersHint');
+    const usersBody = document.querySelector('#tblUsers tbody');
 
     function esc(s){
       return (s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    }
+
+    function scrollToEl(el){
+      if (!el) return;
+      try {
+        const y = el.getBoundingClientRect().top + window.pageYOffset - 72;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+      } catch (e) { /* no-op */ }
     }
 
     async function fetchPrograms(){
@@ -91,6 +128,12 @@
       return r.json();
     }
 
+    async function fetchProgramUsers(progId){
+      const r = await fetch('/api/program/employees?ProgId=' + encodeURIComponent(progId));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }
+
     function renderRows(rows){
       tbody.innerHTML = '';
       const list = Array.isArray(rows) ? rows : [];
@@ -98,16 +141,46 @@
         // 兼容 list_programs/search_programs 欄位命名
         const id = it.ProgId ?? it.progId ?? it.code ?? '';
         const name = it.ProgName ?? it.progName ?? it.name ?? '';
+        const users = Number(it.UserCount ?? it.userCount ?? it.Count ?? it.count ?? 0) || 0;
         const tr = document.createElement('tr');
         const link = `/ModifyProgram?ProgId=${encodeURIComponent(id)}`;
         tr.innerHTML = `
           <td>${esc(id)}</td>
           <td>${esc(name)}</td>
+          <td><button class="link" data-prog="${esc(id)}" data-name="${esc(name)}" type="button">${users}</button></td>
           <td><a class="link" href="${link}">編輯</a></td>
         `;
         tbody.appendChild(tr);
+        // 將使用人數由按鈕改為 <a> 連結樣式（保持點擊後顏色不變）
+        (function(){
+          const btn = tr.querySelector('button[data-prog]');
+          if (!btn) return;
+          const a = document.createElement('a');
+          a.href = '#';
+          a.className = 'link';
+          a.setAttribute('data-prog', id);
+          a.setAttribute('data-name', name);
+          a.textContent = String(users);
+          btn.replaceWith(a);
+        })();
       }
       if (hint) hint.textContent = `顯示 ${list.length} 筆`;
+    }
+
+    function renderUsers(list){
+      usersBody.innerHTML = '';
+      const arr = Array.isArray(list) ? list : [];
+      for (const e of arr){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${esc(e.EmployeeId || '')}</td>
+          <td>${esc(e.EmployeeName || '')}</td>
+          <td>${esc(e.UnitName || '')}</td>
+          <td>${esc(e.RoleName || '')}</td>
+        `;
+        usersBody.appendChild(tr);
+      }
+      if (usersHint) usersHint.textContent = `顯示 ${arr.length} 筆`;
     }
 
     document.getElementById('btnSearchProg').addEventListener('click', async () => {
@@ -122,6 +195,29 @@
     document.getElementById('btnClearProg').addEventListener('click', () => {
       qProgId.value=''; qProgName.value='';
       tbody.innerHTML=''; if (hint) hint.textContent='顯示 0 筆';
+      if (panelUsers){ panelUsers.style.display='none'; usersBody.innerHTML=''; usersHint.textContent='尚未選擇程式'; progTitle.textContent=''; }
+    });
+
+    // 點選使用人數顯示使用此程式的員工（支援 a/button）
+    tbody.addEventListener('click', async (ev) => {
+      const el = ev.target.closest('a[data-prog],button[data-prog]');
+      if (!el) return;
+      if (el.tagName === 'A') ev.preventDefault();
+      const pid = el.getAttribute('data-prog') || '';
+      const pname = el.getAttribute('data-name') || '';
+      if (!pid) return;
+      if (panelUsers) panelUsers.style.display = '';
+      // Scroll the page to the panel position for visibility
+      scrollToEl(panelUsers);
+      if (progTitle) progTitle.textContent = `${pid}｜${pname}`;
+      if (usersHint) usersHint.textContent = '查詢中...';
+      try {
+        const list = await fetchProgramUsers(pid);
+        renderUsers(list);
+      } catch (e) {
+        console.error(e);
+        if (usersHint) usersHint.textContent = '讀取失敗';
+      }
     });
   </script>
 </body>
